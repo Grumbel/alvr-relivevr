@@ -346,6 +346,13 @@ public:
         }
     }
 
+    // The next frame holds linear colour values to be sRGB-encoded.
+    void setLinearContent(bool linear) {
+        if (renderer.hasValue()) {
+            renderer.get().linearContent = linear;
+        }
+    }
+
     // True when engaging the reprojection actually warps pixels with the
     // current pass chain. Also false while the encoder has not been built.
     // Non-const because Optional::hasValue() is not const-qualified.

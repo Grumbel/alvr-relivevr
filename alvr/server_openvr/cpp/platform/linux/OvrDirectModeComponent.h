@@ -83,6 +83,9 @@ private:
         int fds[3];
         SwapTextureSetDesc_t textDesc;
         uint32_t pid;
+        // vrcompositor writes linear colour values into its sRGB textures
+        // (apps write sRGB-encoded ones), so its frames need encoding.
+        bool linearContent = false;
     };
     std::map<vr::SharedTextureHandle_t, std::pair<ProcessResource*, int>> m_handleMap;
     void CleanupProcessResource(ProcessResource* processResource);
@@ -126,6 +129,8 @@ private:
         vr::HmdQuaternion_t renderOrientation;
         // Texture bounds of each eye (the rendered sub-rectangle).
         alvr::render::EyeBounds bounds[2];
+        // The layer holds linear colour values (see ProcessResource).
+        bool linearContent = false;
         // Encoder-state generation this job was built against. The worker
         // discards the job if the generation moved (rebuild, shutdown, set
         // switch) between enqueue and processing.

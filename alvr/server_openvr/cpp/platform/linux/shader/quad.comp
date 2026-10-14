@@ -20,7 +20,16 @@ layout (push_constant) uniform Rewarp {
     // (0,0,1,1) for apps that use the whole texture.
     layout (offset = 128) vec4 leftBounds;
     layout (offset = 144) vec4 rightBounds;
+    // Nonzero: in_img holds linear values (vrcompositor's frames, while apps
+    // write sRGB-encoded ones); encode them, the stream carries sRGB.
+    layout (offset = 160) uint encodeSrgb;
 } pc;
+
+vec3 LinearToSrgb(vec3 c)
+{
+    c = clamp(c, 0., 1.);
+    return mix(c * 12.92, 1.055 * pow(c, vec3(1. / 2.4)) - .055, step(vec3(.0031308), c));
+}
 
 vec2 WarpEyeUV(vec2 eyeUV, bool isRightEye)
 {
@@ -54,5 +63,8 @@ void main()
     }
 
     vec4 res = texture(in_img, npos);
+    if (pc.encodeSrgb != 0) {
+        res.rgb = LinearToSrgb(res.rgb);
+    }
     imageStore(out_img, pos, res);
 }

@@ -727,6 +727,7 @@ void Renderer::render(VkContext& vkCtx, u32 leftIdx, u32 rightIdx, int const wai
         .centerShifts = foveationCenterShifts,
         .leftBounds = { eyeBounds[0].uMin, eyeBounds[0].vMin, eyeBounds[0].uMax, eyeBounds[0].vMax },
         .rightBounds = { eyeBounds[1].uMin, eyeBounds[1].vMin, eyeBounds[1].uMax, eyeBounds[1].vMax },
+        .encodeSrgb = linearContent ? 1u : 0u,
     };
 
     for (usize pipeIdx = 0; pipeIdx < pipes.size(); ++pipeIdx) {

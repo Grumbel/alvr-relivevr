@@ -109,8 +109,12 @@ struct PushConstants {
     FoveationCenterShifts centerShifts;
     float leftBounds[4] = { 0.f, 0.f, 1.f, 1.f };
     float rightBounds[4] = { 0.f, 0.f, 1.f, 1.f };
+    // Nonzero: the input holds linear values, encode them to sRGB.
+    uint32_t encodeSrgb = 0;
+    uint32_t pad[3] = {};
 };
-static_assert(sizeof(PushConstants) == 160);
+static_assert(sizeof(PushConstants) == 176);
+static_assert(offsetof(PushConstants, encodeSrgb) == 160);
 static_assert(offsetof(PushConstants, centerShifts) == 112);
 static_assert(offsetof(PushConstants, leftBounds) == 128);
 static_assert(offsetof(PushConstants, rightBounds) == 144);
@@ -180,6 +184,9 @@ public:
     WarpParams warpParams {};
 
     EyeBounds eyeBounds[2] {};
+
+    // The input textures hold linear colour values (vrcompositor's frames).
+    bool linearContent = false;
 
     FoveationCenterShifts foveationCenterShifts {};
 

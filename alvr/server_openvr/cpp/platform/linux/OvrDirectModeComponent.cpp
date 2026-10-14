@@ -303,6 +303,7 @@ void OvrDirectModeComponent::EncodeWorkerLoop() {
             }
 
             enc.setEyeBounds(job.bounds[0], job.bounds[1]);
+            enc.setLinearContent(job.linearContent);
             enc.present(job.leftIdx, job.rightIdx, stampTimestampNs, warpParams, job.waitFds);
         } catch (std::exception const& e) {
             // An exception escaping a thread's start function is
@@ -350,6 +351,19 @@ void OvrDirectModeComponent::CreateSwapTextureSet(
     ProcessResource* processResource = new ProcessResource();
     processResource->textDesc = *pSwapTextureSetDesc;
     processResource->pid = unPid;
+    {
+        char comm[64] = {};
+        std::string path = "/proc/" + std::to_string(unPid) + "/comm";
+        if (FILE* f = fopen(path.c_str(), "r")) {
+            if (fgets(comm, sizeof(comm), f) == nullptr)
+                comm[0] = 0;
+            fclose(f);
+        }
+        comm[strcspn(comm, "\n")] = 0;
+        processResource->linearContent = strcmp(comm, "vrcompositor") == 0;
+        Info("Swap texture set owner '%s': %s content", comm,
+             processResource->linearContent ? "linear" : "sRGB");
+    }
     m_swapchainIndices[processResource] = 0;
 
     {
@@ -663,6 +677,9 @@ void OvrDirectModeComponent::Present(vr::SharedTextureHandle_t syncTexture) {
     for (int e = 0; e < 2; ++e) {
         auto const& b = m_submitLayers[0][e].bounds;
         job.bounds[e] = { b.uMin, b.vMin, b.uMax, b.vMax };
+    }
+    if (auto it = m_handleMap.find(m_submitLayers[0][0].hTexture); it != m_handleMap.end()) {
+        job.linearContent = it->second.first->linearContent;
     }
     job.generation = m_encGeneration;
     job.enqueueTime = std::chrono::steady_clock::now();
