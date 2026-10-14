@@ -169,8 +169,8 @@ public:
         }
     }
     virtual bool ShouldBlockStandbyMode() override { return false; }
-    virtual void EnterStandby() override { Debug("DriverProvider::EnterStandby"); }
-    virtual void LeaveStandby() override { Debug("DriverProvider::LeaveStandby"); }
+    virtual void EnterStandby() override { Info("DriverProvider::EnterStandby"); }
+    virtual void LeaveStandby() override { Info("DriverProvider::LeaveStandby"); }
 } g_driver_provider;
 
 // bindings for Rust

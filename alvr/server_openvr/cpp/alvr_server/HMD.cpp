@@ -221,6 +221,7 @@ void Hmd::StartStreaming() {
     );
 #endif
 
+    Info("Hmd: proximity true (streaming started)");
     vr::VRDriverInput()->UpdateBooleanComponent(m_proximity, true, 0.0);
 
     if (m_streamComponentsInitialized) {
@@ -259,6 +260,7 @@ void Hmd::StartStreaming() {
 void Hmd::StopStreaming() {
     Debug("Hmd::StopStreaming");
 
+    Info("Hmd: proximity false (streaming stopped)");
     vr::VRDriverInput()->UpdateBooleanComponent(m_proximity, false, 0.0);
 }
 
@@ -299,6 +301,7 @@ void Hmd::SetViewParams(const FfiViewParams params[2]) {
 }
 
 void Hmd::SetProximityState(bool headsetIsWorn) {
+    Info("Hmd: proximity %d (client)", headsetIsWorn);
     vr::VRDriverInput()->UpdateBooleanComponent(m_proximity, headsetIsWorn, 0.0);
 }
 
