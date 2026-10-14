@@ -708,8 +708,8 @@ fn handle_device_event(ctx: &ConnectionContext, s: &mut Session, v: &Value) {
 }
 
 /// Daydream controller input → right-hand button entries of the emulated
-/// controller (app = `/in/menu/click`; home = `/in/sys/click` is handled by
-/// Daydream itself and leaves the app, so it is not mapped).
+/// controller. The home button is handled by Daydream itself and leaves the
+/// app; the client only sends an empty event for it.
 /// Returns false for inputs without a mapping.
 fn daydream_input(id: &str, val: Option<&Value>, out: &mut Vec<ButtonEntry>) -> bool {
     let binary = |path_id: u64, out: &mut Vec<ButtonEntry>| {
@@ -760,8 +760,12 @@ fn daydream_input(id: &str, val: Option<&Value>, out: &mut Vec<ButtonEntry>) -> 
                 });
             }
         }
-        // App button → system (SteamVR dashboard).
-        "/in/menu/click" | "/in/app/click" => binary(*RIGHT_SYSTEM_CLICK_ID, out),
+        // App button → system (SteamVR dashboard). The client turns a short
+        // press into a fixed ~50 ms /in/menu/click tap on release and reports
+        // a long press as /in/sys/click, held for as long as the button is.
+        "/in/menu/click" | "/in/app/click" | "/in/sys/click" => {
+            binary(*RIGHT_SYSTEM_CLICK_ID, out)
+        }
         "/in/vol/+/click" => binary(*RIGHT_MENU_CLICK_ID, out),
         "/in/vol/-/click" => binary(*RIGHT_SQUEEZE_CLICK_ID, out),
         _ => return false,
