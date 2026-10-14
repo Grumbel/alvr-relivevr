@@ -139,8 +139,15 @@ alvr::EncodePipelineVAAPI::EncodePipelineVAAPI(
     alvr::Vendor vendor,
     VkFrame& input_frame,
     uint32_t width,
-    uint32_t height
+    uint32_t height,
+    int eye
 ) {
+    // Per-eye stream: the encoder sees one half of the side-by-side frame,
+    // cropped on the GPU by the filter graph below.
+    const uint32_t full_width = width;
+    if (eye >= 0) {
+        width /= 2;
+    }
     /* VAAPI Encoding pipeline
      * The encoding pipeline has 3 frame types:
      * - input vulkan frames, only used to initialize the mapped frames
@@ -234,10 +241,16 @@ alvr::EncodePipelineVAAPI::EncodePipelineVAAPI(
     encoder_ctx->sample_aspect_ratio = AVRational { 1, 1 };
     encoder_ctx->pix_fmt = AV_PIX_FMT_VAAPI;
     encoder_ctx->max_b_frames = 0;
-    encoder_ctx->color_range = AVCOL_RANGE_JPEG;
-    encoder_ctx->color_primaries = AVCOL_PRI_BT709;
-    encoder_ctx->color_trc = AVCOL_TRC_IEC61966_2_1;
-    encoder_ctx->colorspace = AVCOL_SPC_BT709;
+    if (eye >= 0) {
+        // ReliveVR client: limited range, no colour description (as the
+        // stream it is known to decode correctly).
+        encoder_ctx->color_range = AVCOL_RANGE_MPEG;
+    } else {
+        encoder_ctx->color_range = AVCOL_RANGE_JPEG;
+        encoder_ctx->color_primaries = AVCOL_PRI_BT709;
+        encoder_ctx->color_trc = AVCOL_TRC_IEC61966_2_1;
+        encoder_ctx->colorspace = AVCOL_SPC_BT709;
+    }
 
     // The manager reports a target only once per change, so a rebuild mid
     // session has to reuse the last one.
@@ -305,7 +318,7 @@ alvr::EncodePipelineVAAPI::EncodePipelineVAAPI(
     }
 
     encoder_frame = av_frame_alloc();
-    if (vendor == Vendor::Intel || getenv("ALVR_VAAPI_IMPORT_SURFACE")) {
+    if (eye < 0 && (vendor == Vendor::Intel || getenv("ALVR_VAAPI_IMPORT_SURFACE"))) {
         // TODO: Fix output import
         Info("Importing VA surface");
         DrmImage drm;
@@ -355,8 +368,18 @@ alvr::EncodePipelineVAAPI::EncodePipelineVAAPI(
     inputs->pad_idx = 0;
     inputs->next = NULL;
 
-    std::string filters = "scale_vaapi=w=" + std::to_string(width) + ":h=" + std::to_string(height)
-        + ":out_range=full:out_color_matrix=bt709:format=";
+    std::string filters;
+    if (eye >= 0) {
+        // On hw frames crop only sets the crop fields (the link keeps the full
+        // size); scale_vaapi uses them as the VPP input region. Default
+        // (limited) range: what the ReliveVR client decodes correctly.
+        filters = "crop=w=" + std::to_string(width) + ":h=" + std::to_string(height)
+            + ":x=" + std::to_string(eye * (full_width / 2)) + ":y=0,scale_vaapi=w="
+            + std::to_string(width) + ":h=" + std::to_string(height) + ":format=";
+    } else {
+        filters = "scale_vaapi=w=" + std::to_string(width) + ":h=" + std::to_string(height)
+            + ":out_range=full:out_color_matrix=bt709:format=";
+    }
     if ((Settings_Instance()->m_codec == ALVR_CODEC_HEVC
          || Settings_Instance()->m_codec == ALVR_CODEC_AV1)
         && Settings_Instance()->m_use10bitEncoder) {

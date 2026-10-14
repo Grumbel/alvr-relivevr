@@ -1,6 +1,11 @@
 use std::{env, path::PathBuf};
 
+// ALVR_VULKAN_HEADERS_DIR / ALVR_FFMPEG_DIR / ALVR_X264_DIR: prebuilt
+// dependencies (e.g. from Nix) instead of the `cargo xtask prepare-deps` build.
 fn get_vulkan_headers_path(platform_name: &str) -> PathBuf {
+    if let Some(dir) = env::var_os("ALVR_VULKAN_HEADERS_DIR") {
+        return dir.into();
+    }
     alvr_filesystem::deps_dir()
         .join(if platform_name == "linux" {
             "linux"
@@ -11,6 +16,9 @@ fn get_vulkan_headers_path(platform_name: &str) -> PathBuf {
 }
 
 fn get_ffmpeg_path(platform_name: &str) -> PathBuf {
+    if let Some(dir) = env::var_os("ALVR_FFMPEG_DIR") {
+        return dir.into();
+    }
     let ffmpeg_path = alvr_filesystem::deps_dir()
         .join(if platform_name == "linux" {
             "linux"
@@ -28,10 +36,16 @@ fn get_ffmpeg_path(platform_name: &str) -> PathBuf {
 
 #[cfg(all(target_os = "linux", feature = "gpl"))]
 fn get_linux_x264_path() -> PathBuf {
+    if let Some(dir) = env::var_os("ALVR_X264_DIR") {
+        return dir.into();
+    }
     alvr_filesystem::deps_dir().join("linux/x264/alvr_build")
 }
 
 fn main() {
+    for var in ["ALVR_VULKAN_HEADERS_DIR", "ALVR_FFMPEG_DIR", "ALVR_X264_DIR"] {
+        println!("cargo:rerun-if-env-changed={var}");
+    }
     let platform_name = env::var("CARGO_CFG_TARGET_OS").unwrap();
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
 

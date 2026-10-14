@@ -96,7 +96,7 @@ void processHevcNals(unsigned char*& buf, int& len) {
 }
 
 void ParseFrameNals(
-    int codec, unsigned char* buf, int len, unsigned long long targetTimestampNs, bool isIdr
+    int codec, unsigned char* buf, int len, unsigned long long targetTimestampNs, bool isIdr, int eye
 ) {
     static bool av1GotFrame = false;
 
@@ -113,5 +113,5 @@ void ParseFrameNals(
         SetVideoConfigNals(0, 0, codec);
     }
 
-    VideoSend(targetTimestampNs, buf, len, isIdr);
+    VideoSend(targetTimestampNs, buf, len, isIdr, eye);
 }

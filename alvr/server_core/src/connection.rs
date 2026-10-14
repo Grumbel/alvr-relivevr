@@ -52,6 +52,8 @@ const MAX_UNREAD_PACKETS: usize = 10; // Applies per stream
 
 pub struct VideoPacket {
     pub header: VideoPacketHeader,
+    /// 0 left, 1 right (per-eye encoding), -1 both eyes side by side.
+    pub eye: i32,
     pub payload: Vec<u8>,
 }
 
@@ -287,6 +289,7 @@ pub fn compute_restart_settings_hash(
 }
 
 // Alternate connection trials with manual IPs and clients discovered on the local network
+#[allow(dead_code)] // replaced by relivevr::handshake_loop
 pub fn handshake_loop(ctx: Arc<ConnectionContext>, lifecycle_state: Arc<RwLock<LifecycleState>>) {
     dbg_connection!("handshake_loop: Begin");
 
@@ -949,6 +952,7 @@ fn connection_pipeline(
                 let VideoPacket {
                     mut header,
                     payload,
+                    ..
                 } = match video_channel_receiver.recv_timeout(STREAMING_RECV_TIMEOUT) {
                     Ok(packet) => packet,
                     Err(RecvTimeoutError::Timeout) => continue,

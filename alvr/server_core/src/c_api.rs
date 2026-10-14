@@ -535,6 +535,7 @@ pub unsafe extern "C" fn alvr_send_video_nal(
             unsafe { foveation_center_shifts.as_ref() }.copied(),
             is_idr,
             buffer.to_vec(),
+            -1,
         );
     }
 }

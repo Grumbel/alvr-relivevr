@@ -28,7 +28,9 @@ public:
         alvr::Vendor vendor,
         VkFrame& input_frame,
         uint32_t width,
-        uint32_t height
+        uint32_t height,
+        // 0/1: encode only the left/right half of the side-by-side input frame.
+        int eye = -1
     );
 
     // TODO: Don't pass the timestamp here we're literally just passing it through (or does it help

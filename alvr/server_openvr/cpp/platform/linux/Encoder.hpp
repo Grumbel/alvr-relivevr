@@ -103,7 +103,9 @@ class Encoder {
 
     Optional<render::Renderer> renderer;
 
-    std::unique_ptr<EncodePipeline> encoder;
+    // ReliveVR: the client decodes each eye with its own decoder (frmType 0/1),
+    // so the side-by-side frame is encoded as two independent per-eye streams.
+    std::unique_ptr<EncodePipeline> encoders[2];
     std::unique_ptr<VkFrame> frame;
     bool encoderMissingLogged = false;
     IDRScheduler idrScheduler;
@@ -206,9 +208,14 @@ public:
             vkCtx, out.image.image, out.imageCI, out.size, out.image.memory, out.drm
         );
 
-        encoder
-            = EncodePipeline::Create(vkCtx, devicePath, *frame, outExtent.width, outExtent.height);
-        if (!encoder) {
+        for (int eye = 0; eye < 2; ++eye) {
+            encoders[eye] = EncodePipeline::Create(
+                vkCtx, devicePath, *frame, outExtent.width, outExtent.height, eye
+            );
+        }
+        if (!encoders[0] || !encoders[1]) {
+            encoders[0].reset();
+            encoders[1].reset();
             throw std::runtime_error("no usable encoder for the current settings");
         }
         encoderMissingLogged = false;
@@ -226,7 +233,8 @@ public:
         // it comes back.
         vkCtx.dev.waitIdle();
 
-        encoder.reset();
+        encoders[0].reset();
+        encoders[1].reset();
         frame.reset();
         if (renderer.hasValue()) {
             renderer.get().destroy(vkCtx);
@@ -244,7 +252,7 @@ public:
         render::WarpParams const& warp,
         int const waitFds[2]
     ) {
-        if (!encoder) {
+        if (!encoders[0] || !encoders[1]) {
             for (int e = 0; e < 2; ++e) {
                 if (waitFds[e] >= 0) {
                     close(waitFds[e]);
@@ -263,21 +271,31 @@ public:
         renderer.get().render(vkCtx, leftIdx, rightIdx, waitFds);
         ReportComposed(targetTimestampNs, 0);
 
-        encoder->SetParams(GetDynamicEncoderParams());
-        encoder->PushFrame(0, idrScheduler.CheckIDRInsertion());
-
-        alvr::FramePacket framePacket;
-        if (!encoder->GetEncoded(framePacket)) {
-            assert(false);
+        auto params = GetDynamicEncoderParams();
+        params.bitrate_bps /= 2; // per eye
+        // Same IDR decision for both eyes keeps their GOPs aligned.
+        bool const idr = idrScheduler.CheckIDRInsertion();
+        for (auto& encoder : encoders) {
+            encoder->SetParams(params);
+            encoder->PushFrame(0, idr);
         }
 
-        ParseFrameNals(
-            encoder->GetCodec(),
-            framePacket.data,
-            framePacket.size,
-            targetTimestampNs,
-            framePacket.isIDR
-        );
+        alvr::FramePacket framePackets[2];
+        for (int eye = 0; eye < 2; ++eye) {
+            if (!encoders[eye]->GetEncoded(framePackets[eye])) {
+                assert(false);
+            }
+        }
+        for (int eye = 0; eye < 2; ++eye) {
+            ParseFrameNals(
+                encoders[eye]->GetCodec(),
+                framePackets[eye].data,
+                framePackets[eye].size,
+                targetTimestampNs,
+                framePackets[eye].isIDR,
+                eye
+            );
+        }
     }
 
     void requestIdr() { idrScheduler.InsertIDR(); }
@@ -318,7 +336,8 @@ public:
         // The device dies in this body, but members are destroyed after the
         // body runs. Release the pipeline and the frame first so ~VkFrame
         // does not destroy its semaphore on a dead device.
-        encoder.reset();
+        encoders[0].reset();
+        encoders[1].reset();
         frame.reset();
 
         if (renderer.hasValue()) {

@@ -204,8 +204,9 @@ extern "C" void LogEncoder(const char* stringPtr);
 extern "C" void LogPeriodically(const char* tag, const char* stringPtr);
 extern "C" void DriverReadyIdle(bool setDefaultChaprone);
 extern "C" void SetVideoConfigNals(const unsigned char* configBuffer, int len, int codec);
+// eye: 0 left, 1 right (per-eye encoding), -1 both eyes side by side
 extern "C" void
-VideoSend(unsigned long long targetTimestampNs, unsigned char* buf, int len, bool isIdr);
+VideoSend(unsigned long long targetTimestampNs, unsigned char* buf, int len, bool isIdr, int eye);
 extern "C" void
 HapticsSend(unsigned long long path, float duration_s, float frequency, float amplitude);
 extern "C" void ShutdownRuntime();
@@ -265,7 +266,12 @@ extern "C" void SetChaperoneArea(float areaWidth, float areaHeight);
 
 // NalParsing.cpp
 void ParseFrameNals(
-    int codec, unsigned char* buf, int len, unsigned long long targetTimestampNs, bool isIdr
+    int codec,
+    unsigned char* buf,
+    int len,
+    unsigned long long targetTimestampNs,
+    bool isIdr,
+    int eye = -1
 );
 
 // CrashHandler.cpp

@@ -27,9 +27,14 @@ std::unique_ptr<alvr::EncodePipeline> alvr::EncodePipeline::Create(
     std::string devicePath,
     VkFrame& input_frame,
     /* VkFrameCtx &vk_frame_ctx,  */ uint32_t width,
-    uint32_t height
+    uint32_t height,
+    int eye
 ) {
     using alvr::Vendor;
+    if (eye >= 0 && (vk_ctx.meta.vendor == Vendor::Nvidia || Settings_Instance()->m_forceSwEncoding)) {
+        Error("Per-eye encoding is only implemented for VAAPI");
+        return nullptr;
+    }
     if (Settings_Instance()->m_forceSwEncoding == false) {
         alvr::HWContext hwCtx(vk_ctx);
         if (vk_ctx.meta.vendor == Vendor::Nvidia) {
@@ -49,7 +54,7 @@ std::unique_ptr<alvr::EncodePipeline> alvr::EncodePipeline::Create(
         } else {
             try {
                 auto vaapi = std::make_unique<alvr::EncodePipelineVAAPI>(
-                    hwCtx, devicePath, vk_ctx.meta.vendor, input_frame, width, height
+                    hwCtx, devicePath, vk_ctx.meta.vendor, input_frame, width, height, eye
                 );
                 Info("Using VAAPI encoder");
                 return vaapi;

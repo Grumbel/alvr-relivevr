@@ -43,7 +43,8 @@ public:
         std::string devicePath,
         VkFrame& input_frame,
         /* VkFrameCtx &vk_frame_ctx,  */ uint32_t width,
-        uint32_t height
+        uint32_t height,
+        int eye = -1 // 0 left / 1 right half only (per-eye stream), -1 whole frame
     );
 
 protected:

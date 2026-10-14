@@ -5,6 +5,7 @@ mod hand_gestures;
 mod haptics;
 mod input_mapping;
 mod logging_backend;
+mod relivevr;
 mod sockets;
 mod statistics;
 mod tracking;
@@ -262,7 +263,8 @@ impl ServerCoreContext {
         let connection_context = Arc::clone(&self.connection_context);
         let lifecycle_state = Arc::clone(&self.lifecycle_state);
         *self.connection_thread.write() = Some(thread::spawn(move || {
-            connection::handshake_loop(connection_context, lifecycle_state);
+            // ReliveVR (AMD Wireless GVR) headset client instead of the ALVR client.
+            relivevr::handshake_loop(connection_context, lifecycle_state);
         }));
     }
 
@@ -399,6 +401,8 @@ impl ServerCoreContext {
         foveation_center_shifts: Option<[[f32; 2]; 2]>,
         is_idr: bool,
         nal_buffer: Vec<u8>,
+        // 0 left, 1 right (per-eye encoding), -1 both eyes side by side.
+        eye: i32,
     ) {
         dbg_server_core!("send_video_nal");
 
@@ -459,6 +463,7 @@ impl ServerCoreContext {
                         foveation_center_shifts,
                         is_idr,
                     },
+                    eye,
                     payload: nal_buffer,
                 });
                 if matches!(sender_result, Err(TrySendError::Full(_))) {
