@@ -33,4 +33,9 @@ private:
     vr::HmdMatrix34_t m_transform
         = { { { 1.0, 0.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0, 0.0 }, { 0.0, 0.0, 1.0, 0.0 } } };
     bool m_transformIdentity = true;
+    // Rotation from our stored poses to the space of the poses apps render with,
+    // learned while the head is still. Covers zero-pose transforms that
+    // m_transform misses (it is not always updated after a SteamVR restart), so
+    // matching never compares poses with a constant offset between them.
+    mutable float m_correction[3][3] = { { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 } };
 };

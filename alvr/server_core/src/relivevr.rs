@@ -24,12 +24,15 @@ use alvr_common::{
     info,
     parking_lot::RwLock,
     glam::UVec2,
-    warn, DeviceMotion, Fov, LifecycleState, Pose, ViewParams, HAND_RIGHT_ID, HEAD_ID, RIGHT_A_CLICK_ID, RIGHT_B_CLICK_ID,
-    RIGHT_SYSTEM_CLICK_ID, RIGHT_THUMBSTICK_CLICK_ID, RIGHT_THUMBSTICK_TOUCH_ID, RIGHT_THUMBSTICK_X_ID,
-    RIGHT_THUMBSTICK_Y_ID, RIGHT_TRIGGER_CLICK_ID, RIGHT_TRIGGER_TOUCH_ID, RIGHT_TRIGGER_VALUE_ID,
+    warn, DeviceMotion, Fov, LifecycleState, Pose, ViewParams, HAND_RIGHT_ID, HEAD_ID,
+    RIGHT_MENU_CLICK_ID, RIGHT_SQUEEZE_CLICK_ID, RIGHT_SYSTEM_CLICK_ID, RIGHT_TRACKPAD_CLICK_ID,
+    RIGHT_TRACKPAD_TOUCH_ID, RIGHT_TRACKPAD_X_ID, RIGHT_TRACKPAD_Y_ID, RIGHT_TRIGGER_CLICK_ID,
+    RIGHT_TRIGGER_VALUE_ID,
 };
 use alvr_packets::{BatteryInfo, ButtonEntry, ButtonValue};
-use alvr_session::{CodecType, H264Profile, SteamvrHmdInitConfig};
+use alvr_session::{
+    CodecType, ControllersEmulationMode, H264Profile, SteamvrHmdInitConfig,
+};
 use serde_json::Value;
 use std::{
     collections::{HashSet, VecDeque},
@@ -284,8 +287,8 @@ struct Session {
     recent_poses: Arc<alvr_common::parking_lot::Mutex<RecentPoses>>,
     synth_stop: Arc<AtomicBool>,
     synth_thread: Option<JoinHandle<()>>,
-    /// Buttons the emulated SteamVR controller registered (Quest 2 Touch by
-    /// default). Daydream inputs are emitted directly as these destination IDs:
+    /// Buttons the emulated SteamVR controller registered (Vive wand, forced
+    /// in start_streaming). Daydream inputs are emitted directly as these destination IDs:
     /// ALVR's automatic source-profile mapping drops trigger/click and system.
     registered_buttons: HashSet<u64>,
     unknown_inputs: HashSet<String>,
@@ -454,6 +457,21 @@ fn start_streaming(ctx: &Arc<ConnectionContext>, sender: &Arc<Sender>, s: &mut S
                 .content
                 .hand_skeleton
                 .enabled = false;
+        }
+        // The Daydream controller (touchpad, trigger, app button) is closest to
+        // a Vive wand; Touch emulation also infers a hand skeleton from touches.
+        if let Some(controllers) = session_manager.settings().headset.controllers.as_option()
+            && controllers.emulation_mode != ControllersEmulationMode::ViveWand
+        {
+            info!("ReliveVR: switching controller emulation to Vive wand");
+            session_manager
+                .session_mut()
+                .session_settings
+                .headset
+                .controllers
+                .content
+                .emulation_mode
+                .variant = alvr_session::ControllersEmulationModeDefaultVariant::ViveWand;
         }
         let init_config = SteamvrHmdInitConfig {
             eye_resolution_width: EYE_RESOLUTION,
@@ -706,43 +724,27 @@ fn daydream_input(id: &str, val: Option<&Value>, out: &mut Vec<ButtonEntry>) -> 
         return false;
     };
     match input {
-        // Touchpad → thumbstick. Protocol Y grows downwards.
+        // Protocol Y grows downwards.
         "/in/tp/val" => {
             if let Some([x, y]) = val.and_then(json_f32s::<2>) {
                 out.push(ButtonEntry {
-                    path_id: *RIGHT_THUMBSTICK_X_ID,
+                    path_id: *RIGHT_TRACKPAD_X_ID,
                     value: ButtonValue::Scalar(x.clamp(-1.0, 1.0)),
                 });
                 out.push(ButtonEntry {
-                    path_id: *RIGHT_THUMBSTICK_Y_ID,
+                    path_id: *RIGHT_TRACKPAD_Y_ID,
                     value: ButtonValue::Scalar((-y).clamp(-1.0, 1.0)),
                 });
             }
         }
-        "/in/tp/touch" => {
-            binary(*RIGHT_THUMBSTICK_TOUCH_ID, out);
-            if val.and_then(Value::as_bool) == Some(false) {
-                // Recentre the stick when the finger lifts.
-                for path_id in [*RIGHT_THUMBSTICK_X_ID, *RIGHT_THUMBSTICK_Y_ID] {
-                    out.push(ButtonEntry {
-                        path_id,
-                        value: ButtonValue::Scalar(0.0),
-                    });
-                }
-            }
-        }
-        "/in/tp/click" => binary(*RIGHT_THUMBSTICK_CLICK_ID, out),
+        "/in/tp/touch" => binary(*RIGHT_TRACKPAD_TOUCH_ID, out),
+        "/in/tp/click" => binary(*RIGHT_TRACKPAD_CLICK_ID, out),
         // The client reports its own trigger (derived from a Daydream button).
         "/in/tr/val" => {
             if let Some(v) = val.and_then(Value::as_f64) {
-                let v = (v as f32).clamp(0.0, 1.0);
                 out.push(ButtonEntry {
                     path_id: *RIGHT_TRIGGER_VALUE_ID,
-                    value: ButtonValue::Scalar(v),
-                });
-                out.push(ButtonEntry {
-                    path_id: *RIGHT_TRIGGER_TOUCH_ID,
-                    value: ButtonValue::Binary(v > 0.0),
+                    value: ButtonValue::Scalar((v as f32).clamp(0.0, 1.0)),
                 });
             }
         }
@@ -753,10 +755,6 @@ fn daydream_input(id: &str, val: Option<&Value>, out: &mut Vec<ButtonEntry>) -> 
                     value: ButtonValue::Binary(pressed),
                 });
                 out.push(ButtonEntry {
-                    path_id: *RIGHT_TRIGGER_TOUCH_ID,
-                    value: ButtonValue::Binary(pressed),
-                });
-                out.push(ButtonEntry {
                     path_id: *RIGHT_TRIGGER_VALUE_ID,
                     value: ButtonValue::Scalar(if pressed { 1.0 } else { 0.0 }),
                 });
@@ -764,8 +762,8 @@ fn daydream_input(id: &str, val: Option<&Value>, out: &mut Vec<ButtonEntry>) -> 
         }
         // App button → system (SteamVR dashboard).
         "/in/menu/click" | "/in/app/click" => binary(*RIGHT_SYSTEM_CLICK_ID, out),
-        "/in/vol/+/click" => binary(*RIGHT_A_CLICK_ID, out),
-        "/in/vol/-/click" => binary(*RIGHT_B_CLICK_ID, out),
+        "/in/vol/+/click" => binary(*RIGHT_MENU_CLICK_ID, out),
+        "/in/vol/-/click" => binary(*RIGHT_SQUEEZE_CLICK_ID, out),
         _ => return false,
     }
     true
