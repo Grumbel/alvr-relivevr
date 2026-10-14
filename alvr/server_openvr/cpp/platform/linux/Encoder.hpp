@@ -349,11 +349,10 @@ public:
     // True when engaging the reprojection actually warps pixels with the
     // current pass chain. Also false while the encoder has not been built.
     // Non-const because Optional::hasValue() is not const-qualified.
-    // ReliveVR: no server-side warp. The client's GVR reprojects every frame
-    // from the stamped pose itself (like the Windows server's stream); warping
-    // here as well re-stamps frames with a newer pose. Verified on the headset:
-    // warp on jitters, warp off is stable (2026-10-14).
-    bool warpCapable() { return false; }
+    // ReliveVR: the warp re-renders each frame at the newest pose and stamps
+    // that pose, so the client's GVR reprojection starts from a pose the image
+    // really shows, however old the app's render pose is.
+    bool warpCapable() { return renderer.hasValue() && warpCapableChain; }
 
 private:
     // Eye-tracked centers when the client supplies gaze, the negotiated static

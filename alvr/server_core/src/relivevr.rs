@@ -799,6 +799,13 @@ fn video_loop(
     recent_poses: &alvr_common::parking_lot::Mutex<RecentPoses>,
 ) {
     let mut substituted = 0u64;
+    // A successful pose lookup on the client erases every older pose from its
+    // queue (Motor::GetHeadPoseByPresentTime: list::erase(begin, found)), so
+    // ptsSensor must never go backwards: an older stamp is gone and the frame
+    // is presented with no pose at all ("Pose for Present not found").
+    let mut last_pts_sensor = 0u64;
+    let mut backwards = 0u64;
+    let mut max_backwards_ticks = 0u64;
     // Debug: first frames of the left eye exactly as sent, for offline decoding.
     let mut dump = std::env::var_os("HOME")
         .and_then(|h| std::fs::File::create(std::path::Path::new(&h).join("relivevr_left.h264")).ok());
@@ -903,6 +910,12 @@ fn video_loop(
                 substituted += 1;
             }
         }
+        if pts_sensor < last_pts_sensor {
+            backwards += 1;
+            max_backwards_ticks = max_backwards_ticks.max(last_pts_sensor - pts_sensor);
+            pts_sensor = last_pts_sensor;
+        }
+        last_pts_sensor = pts_sensor;
         for (eye, p) in [(0u32, &left), (1u32, &right)] {
             // ALVR strips SPS/PPS from IDRs; MediaCodec wants them in-band.
             let nals = if is_idr {
@@ -921,12 +934,13 @@ fn video_loop(
             let body = video_data_payload(frame_num, eye, &nals, pts, is_idr, pts_sensor, 0, 0);
             sender.send(addr, CHANNEL_VIDEO, &body);
         }
-        if frame_num < 3 || frame_num % 600 == 0 {
+        if frame_num < 3 || frame_num % 150 == 0 {
             info!(
-                "ReliveVR: frame {frame_num} L={}B R={}B idr={is_idr} ptsSensor={pts_sensor} pose age {} ms (substituted {substituted})",
+                "ReliveVR: frame {frame_num} L={}B R={}B idr={is_idr} ptsSensor={pts_sensor} pose age {} ms (substituted {substituted}, backwards {backwards}, max {:.1} ms)",
                 left.payload.len(),
                 right.payload.len(),
-                recent_poses.lock().latest.saturating_sub(pts_sensor) / 10_000
+                recent_poses.lock().latest.saturating_sub(pts_sensor) / 10_000,
+                max_backwards_ticks as f64 / 10_000.0
             );
         }
         frame_num += 1;
