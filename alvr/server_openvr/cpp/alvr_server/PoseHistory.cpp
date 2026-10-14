@@ -58,7 +58,9 @@ PoseHistory::GetBestPoseMatch(const vr::HmdMatrix34_t& pose) const {
     const uint64_t newestTimestampNs = m_poseBuffer.back().targetTimestampNs;
     float minDiff = 100000;
     auto minIt = m_poseBuffer.rbegin();
-    for (auto it = m_poseBuffer.rbegin(); it != m_poseBuffer.rend(); ++it) {
+    size_t index = 0, minIndex = 0;
+    float secondDiff = 100000; // best distance among the other entries
+    for (auto it = m_poseBuffer.rbegin(); it != m_poseBuffer.rend(); ++it, ++index) {
         if (newestTimestampNs - it->targetTimestampNs > MATCH_WINDOW_NS) {
             break;
         }
@@ -73,9 +75,23 @@ PoseHistory::GetBestPoseMatch(const vr::HmdMatrix34_t& pose) const {
             }
         }
         if (minDiff > distance) {
+            secondDiff = minDiff;
             minIt = it;
             minDiff = distance;
+            minIndex = index;
+        } else if (secondDiff > distance) {
+            secondDiff = distance;
         }
+    }
+    static uint64_t calls = 0;
+    if (++calls % 75 == 0) {
+        Info(
+            "PoseHistory: match %zu back, diff %.3g (next best %.3g), age %.1f ms",
+            minIndex,
+            minDiff,
+            secondDiff,
+            (newestTimestampNs - minIt->targetTimestampNs) / 1e6
+        );
     }
     return *minIt;
 }

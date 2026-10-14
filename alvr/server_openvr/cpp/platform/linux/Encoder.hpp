@@ -333,8 +333,8 @@ public:
     // Non-const because Optional::hasValue() is not const-qualified.
     // ReliveVR: no server-side warp. The client's GVR reprojects every frame
     // from the stamped pose itself (like the Windows server's stream); warping
-    // here as well re-stamps frames with a newer pose, and any warp error
-    // shows up as frames jumping to the wrong spot.
+    // here as well re-stamps frames with a newer pose. Verified on the headset:
+    // warp on jitters, warp off is stable (2026-10-14).
     bool warpCapable() { return false; }
 
 private:
