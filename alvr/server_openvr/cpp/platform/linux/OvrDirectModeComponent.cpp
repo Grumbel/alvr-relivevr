@@ -302,6 +302,7 @@ void OvrDirectModeComponent::EncodeWorkerLoop() {
                 }
             }
 
+            enc.setEyeBounds(job.bounds[0], job.bounds[1]);
             enc.present(job.leftIdx, job.rightIdx, stampTimestampNs, warpParams, job.waitFds);
         } catch (std::exception const& e) {
             // An exception escaping a thread's start function is
@@ -659,6 +660,10 @@ void OvrDirectModeComponent::Present(vr::SharedTextureHandle_t syncTexture) {
     job.rightIdx = rightIdx.value();
     job.targetTimestampNs = m_targetTimestampNs;
     job.renderOrientation = m_framePoseRotation;
+    for (int e = 0; e < 2; ++e) {
+        auto const& b = m_submitLayers[0][e].bounds;
+        job.bounds[e] = { b.uMin, b.vMin, b.uMax, b.vMax };
+    }
     job.generation = m_encGeneration;
     job.enqueueTime = std::chrono::steady_clock::now();
 

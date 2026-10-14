@@ -84,6 +84,14 @@ static_assert(offsetof(WarpParams, leftTans) == 64);
 static_assert(offsetof(WarpParams, rightTans) == 80);
 static_assert(offsetof(WarpParams, enabled) == 96);
 
+// Region of an eye texture the app rendered into (vr::VRTextureBounds_t).
+// Apps with adaptive resolution (SteamVR Home) render into a sub-rectangle and
+// leave stale content in the rest; v may be flipped (vMin > vMax).
+struct EyeBounds {
+    float uMin = 0.f, vMin = 0.f, uMax = 1.f, vMax = 1.f;
+    bool isFull() const { return uMin == 0.f && vMin == 0.f && uMax == 1.f && vMax == 1.f; }
+};
+
 // Per-eye foveation center shifts for ffr.comp, updated every frame.
 struct FoveationCenterShifts {
     float left[2] = {};
@@ -164,6 +172,8 @@ public:
     void render(VkContext& vkCtx, u32 leftIdx, u32 rightIdx, int const waitFds[2] = nullptr);
 
     WarpParams warpParams {};
+
+    EyeBounds eyeBounds[2] {};
 
     FoveationCenterShifts foveationCenterShifts {};
 

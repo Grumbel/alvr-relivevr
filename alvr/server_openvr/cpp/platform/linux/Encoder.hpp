@@ -328,6 +328,14 @@ public:
 
     void requestIdr() { idrScheduler.InsertIDR(); }
 
+    // Per-eye texture bounds of the next frame (see render::EyeBounds).
+    void setEyeBounds(render::EyeBounds const& left, render::EyeBounds const& right) {
+        if (renderer.hasValue()) {
+            renderer.get().eyeBounds[0] = left;
+            renderer.get().eyeBounds[1] = right;
+        }
+    }
+
     // True when engaging the reprojection actually warps pixels with the
     // current pass chain. Also false while the encoder has not been built.
     // Non-const because Optional::hasValue() is not const-qualified.

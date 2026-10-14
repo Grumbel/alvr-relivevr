@@ -436,6 +436,25 @@ fn start_streaming(ctx: &Arc<ConnectionContext>, sender: &Arc<Sender>, s: &mut S
     // with ClientConnected below.
     {
         let mut session_manager = SESSION_MANAGER.write();
+        // A 3DoF Daydream controller has no fingers: hand skeleton emulation
+        // makes SteamVR show hands instead of the controller.
+        if session_manager
+            .settings()
+            .headset
+            .controllers
+            .as_option()
+            .is_some_and(|c| c.hand_skeleton.enabled())
+        {
+            info!("ReliveVR: disabling hand skeleton emulation");
+            session_manager
+                .session_mut()
+                .session_settings
+                .headset
+                .controllers
+                .content
+                .hand_skeleton
+                .enabled = false;
+        }
         let init_config = SteamvrHmdInitConfig {
             eye_resolution_width: EYE_RESOLUTION,
             eye_resolution_height: EYE_RESOLUTION,
