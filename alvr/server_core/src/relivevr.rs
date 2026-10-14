@@ -291,6 +291,7 @@ struct Session {
     unknown_inputs: HashSet<String>,
     last_tracking_event: Option<Instant>,
     ctrl_poses: u64,
+    max_head_angular_speed: f32,
 }
 
 pub fn handshake_loop(ctx: Arc<ConnectionContext>, lifecycle_state: Arc<RwLock<LifecycleState>>) {
@@ -377,6 +378,7 @@ pub fn handshake_loop(ctx: Arc<ConnectionContext>, lifecycle_state: Arc<RwLock<L
                         unknown_inputs: HashSet::new(),
                         last_tracking_event: None,
                         ctrl_poses: 0,
+                        max_head_angular_speed: 0.0,
                     });
                 }
                 sender.send_json(addr, TYPE_HELLO, &hello_response_json());
@@ -631,12 +633,23 @@ fn handle_device_event(ctx: &ConnectionContext, s: &mut Session, v: &Value) {
 
     // Tracking is keyed by the HMD sample time: it comes back as the frame's
     // target timestamp and must be echoed exactly as VideoData ptsSensor.
-    let Some((time, head)) = hmd else { return };
+    let Some((time, mut head)) = hmd else { return };
+    // No velocities into SteamVR: ALVR's driver and SteamVR would both
+    // extrapolate the pose, so the image would show a predicted pose while
+    // ptsSensor names the raw sample, and the client's reprojection would
+    // correct from the wrong pose (jitter). The client reprojects itself.
+    let speed = head.angular_velocity.length();
+    if speed > s.max_head_angular_speed {
+        s.max_head_angular_speed = speed;
+    }
+    head.linear_velocity = Vec3::ZERO;
+    head.angular_velocity = Vec3::ZERO;
     s.recent_poses.lock().insert(time);
     let n = s.hmd_poses.fetch_add(1, Ordering::Relaxed) + 1;
     if n == 1 || n % 3000 == 0 {
         info!(
-            "ReliveVR: {n} HMD poses received, {} controller poses, latest controller {:?}",
+            "ReliveVR: {n} HMD poses received (max reported head angular speed {:.2}, zeroed), {} controller poses, latest controller {:?}",
+            s.max_head_angular_speed,
             s.ctrl_poses,
             s.latest_controller.map(|m| (m.pose.position, m.pose.orientation))
         );

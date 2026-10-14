@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <fstream>
 #include <memory>
 #include <stdexcept>
@@ -265,12 +266,15 @@ public:
             }
             return;
         }
+        using clock = std::chrono::steady_clock;
+        auto const t0 = clock::now();
         renderer.get().warpParams = warp;
         ReportPresent(targetTimestampNs, 0);
         updateFoveationCenters(targetTimestampNs);
         renderer.get().render(vkCtx, leftIdx, rightIdx, waitFds);
         ReportComposed(targetTimestampNs, 0);
 
+        auto const t1 = clock::now();
         auto params = GetDynamicEncoderParams();
         params.bitrate_bps /= 2; // per eye
         // Same IDR decision for both eyes keeps their GOPs aligned.
@@ -280,10 +284,34 @@ public:
             encoder->PushFrame(0, idr);
         }
 
+        auto const t2 = clock::now();
         alvr::FramePacket framePackets[2];
         for (int eye = 0; eye < 2; ++eye) {
             if (!encoders[eye]->GetEncoded(framePackets[eye])) {
                 assert(false);
+            }
+        }
+        auto const t3 = clock::now();
+        {
+            static uint64_t frames = 0;
+            static double render = 0, push = 0, fetch = 0, interval = 0;
+            static clock::time_point last;
+            auto ms = [](auto d) { return std::chrono::duration<double, std::milli>(d).count(); };
+            render += ms(t1 - t0);
+            push += ms(t2 - t1);
+            fetch += ms(t3 - t2);
+            if (frames > 0)
+                interval += ms(t0 - last);
+            last = t0;
+            if (++frames % 150 == 0) {
+                Info(
+                    "Encoder: avg render %.2f ms, push %.2f ms, fetch %.2f ms, present interval %.2f ms",
+                    render / 150,
+                    push / 150,
+                    fetch / 150,
+                    interval / 150
+                );
+                render = push = fetch = interval = 0;
             }
         }
         for (int eye = 0; eye < 2; ++eye) {
@@ -303,7 +331,11 @@ public:
     // True when engaging the reprojection actually warps pixels with the
     // current pass chain. Also false while the encoder has not been built.
     // Non-const because Optional::hasValue() is not const-qualified.
-    bool warpCapable() { return renderer.hasValue() && warpCapableChain; }
+    // ReliveVR: no server-side warp. The client's GVR reprojects every frame
+    // from the stamped pose itself (like the Windows server's stream); warping
+    // here as well re-stamps frames with a newer pose, and any warp error
+    // shows up as frames jumping to the wrong spot.
+    bool warpCapable() { return false; }
 
 private:
     // Eye-tracked centers when the client supplies gaze, the negotiated static
