@@ -102,12 +102,18 @@ static_assert(sizeof(FoveationCenterShifts) == 16);
 // The push-constant range every pass shares. The warp sits at offset 0 so
 // quad.comp can declare only that prefix; ffr.comp declares the whole block
 // (centers at 112/120). Shaders that declare neither ignore it.
+// Eye texture bounds (uMin, vMin, uMax, vMax) at 128/144 are read by quad.comp
+// (160 bytes; within the 256-byte push constant limit of the supported GPUs).
 struct PushConstants {
     WarpParams warp;
     FoveationCenterShifts centerShifts;
+    float leftBounds[4] = { 0.f, 0.f, 1.f, 1.f };
+    float rightBounds[4] = { 0.f, 0.f, 1.f, 1.f };
 };
-static_assert(sizeof(PushConstants) == 128);
+static_assert(sizeof(PushConstants) == 160);
 static_assert(offsetof(PushConstants, centerShifts) == 112);
+static_assert(offsetof(PushConstants, leftBounds) == 128);
+static_assert(offsetof(PushConstants, rightBounds) == 144);
 
 namespace detail {
 

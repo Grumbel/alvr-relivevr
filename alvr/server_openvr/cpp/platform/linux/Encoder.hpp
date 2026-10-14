@@ -330,6 +330,16 @@ public:
 
     // Per-eye texture bounds of the next frame (see render::EyeBounds).
     void setEyeBounds(render::EyeBounds const& left, render::EyeBounds const& right) {
+        static bool logged = false;
+        if (!logged && (!left.isFull() || !right.isFull())) {
+            logged = true;
+            Info(
+                "Eye texture bounds not full: left u %.3f-%.3f v %.3f-%.3f, right u %.3f-%.3f v "
+                "%.3f-%.3f",
+                left.uMin, left.uMax, left.vMin, left.vMax,
+                right.uMin, right.uMax, right.vMin, right.vMax
+            );
+        }
         if (renderer.hasValue()) {
             renderer.get().eyeBounds[0] = left;
             renderer.get().eyeBounds[1] = right;

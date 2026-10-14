@@ -691,63 +691,31 @@ void Renderer::render(VkContext& vkCtx, u32 leftIdx, u32 rightIdx, int const wai
         .layerCount = 1,
     };
 
-    // Copy each eye's rendered region into its half of the working image: a
-    // plain copy for full-texture bounds, a scaling blit of the sub-rectangle
-    // otherwise (adaptive-resolution apps).
+    // Copy each eye texture into its half of the working image. Texture bounds
+    // (sub-rectangles) cannot be applied here with a blit: this queue is
+    // compute-only and vkCmdBlitImage needs graphics (it hung the GPU).
     auto copyEye = [&](u32 srcIdx, int eye) {
-        auto const& b = eyeBounds[eye];
         int32_t const dstX = eye == 0 ? 0 : static_cast<int32_t>(eyeExtent.width);
-        if (b.isFull()) {
-            vk::ImageCopy2KHR copy {
-                .srcSubresource = subresLayout,
-                .srcOffset = {},
-                .dstSubresource = subresLayout,
-                .dstOffset = { .x = dstX, .y = 0, .z = 0 },
-                .extent = {
-                    .width = eyeExtent.width,
-                    .height = eyeExtent.height,
-                    .depth = 1,
-                },
-            };
-            vk::CopyImageInfo2KHR copyInfo {
-                .srcImage = inputImages[srcIdx].image,
-                .srcImageLayout = inputImages[srcIdx].layout,
-                .dstImage = stageOut->image,
-                .dstImageLayout = stageOut->layout,
-                .regionCount = 1,
-                .pRegions = &copy,
-            };
-            cmdBuf.copyImage2KHR(copyInfo, vkCtx.dispatch);
-            return;
-        }
-        auto px = [](float t, u32 size) {
-            return static_cast<int32_t>(std::lround(std::clamp(t, 0.f, 1.f) * size));
-        };
-        vk::ImageBlit2KHR blit {
+        vk::ImageCopy2KHR copy {
             .srcSubresource = subresLayout,
-            .srcOffsets = std::array<vk::Offset3D, 2> {
-                vk::Offset3D { px(b.uMin, eyeExtent.width), px(b.vMin, eyeExtent.height), 0 },
-                vk::Offset3D { px(b.uMax, eyeExtent.width), px(b.vMax, eyeExtent.height), 1 },
-            },
+            .srcOffset = {},
             .dstSubresource = subresLayout,
-            .dstOffsets = std::array<vk::Offset3D, 2> {
-                vk::Offset3D { dstX, 0, 0 },
-                vk::Offset3D {
-                    dstX + static_cast<int32_t>(eyeExtent.width),
-                    static_cast<int32_t>(eyeExtent.height),
-                    1 },
+            .dstOffset = { .x = dstX, .y = 0, .z = 0 },
+            .extent = {
+                .width = eyeExtent.width,
+                .height = eyeExtent.height,
+                .depth = 1,
             },
         };
-        vk::BlitImageInfo2KHR blitInfo {
+        vk::CopyImageInfo2KHR copyInfo {
             .srcImage = inputImages[srcIdx].image,
             .srcImageLayout = inputImages[srcIdx].layout,
             .dstImage = stageOut->image,
             .dstImageLayout = stageOut->layout,
             .regionCount = 1,
-            .pRegions = &blit,
-            .filter = vk::Filter::eLinear,
+            .pRegions = &copy,
         };
-        cmdBuf.blitImage2KHR(blitInfo, vkCtx.dispatch);
+        cmdBuf.copyImage2KHR(copyInfo, vkCtx.dispatch);
     };
     copyEye(leftIdx, 0);
     copyEye(rightIdx, 1);
@@ -757,6 +725,8 @@ void Renderer::render(VkContext& vkCtx, u32 leftIdx, u32 rightIdx, int const wai
     PushConstants const pushConstants {
         .warp = warpParams,
         .centerShifts = foveationCenterShifts,
+        .leftBounds = { eyeBounds[0].uMin, eyeBounds[0].vMin, eyeBounds[0].uMax, eyeBounds[0].vMax },
+        .rightBounds = { eyeBounds[1].uMin, eyeBounds[1].vMin, eyeBounds[1].uMax, eyeBounds[1].vMax },
     };
 
     for (usize pipeIdx = 0; pipeIdx < pipes.size(); ++pipeIdx) {

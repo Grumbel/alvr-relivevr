@@ -16,6 +16,10 @@ layout (push_constant) uniform Rewarp {
     vec4 leftTans;
     vec4 rightTans;
     uint enabled;
+    // Rendered sub-rectangle of each eye texture (uMin, vMin, uMax, vMax);
+    // (0,0,1,1) for apps that use the whole texture.
+    layout (offset = 128) vec4 leftBounds;
+    layout (offset = 144) vec4 rightBounds;
 } pc;
 
 vec2 WarpEyeUV(vec2 eyeUV, bool isRightEye)
@@ -32,10 +36,14 @@ void main()
     ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
     vec2 npos = (vec2(pos) + 0.5f) / imageSize(out_img);
 
-    if (pc.enabled != 0) {
-        bool isRightEye = npos.x > 0.5;
+    bool isRightEye = npos.x > 0.5;
+    vec4 bounds = isRightEye ? pc.rightBounds : pc.leftBounds;
+    if (pc.enabled != 0 || bounds != vec4(0., 0., 1., 1.)) {
         vec2 eyeUV = vec2(npos.x * 2. - float(isRightEye), npos.y);
-        eyeUV = WarpEyeUV(eyeUV, isRightEye);
+        if (pc.enabled != 0) {
+            eyeUV = WarpEyeUV(eyeUV, isRightEye);
+        }
+        eyeUV = mix(bounds.xy, bounds.zw, eyeUV);
         // Repack into this eye's half of the shared texture, clamped half a
         // texel inside it so filtering never bleeds across the stereo seam.
         vec2 texel = 1. / vec2(textureSize(in_img, 0));
