@@ -201,8 +201,10 @@ void init_paths() {
           { { "/input/system/touch", "/input/right_ps/touch" }, ButtonType::Binary } }
     );
     RIGHT_CONTROLLER_BUTTON_MAPPING.insert(
+        // Not system: a right-hand menu button (Vive wand, PSVR2 options)
+        // is a separate button from that hand's system button.
         { PathStringToHash("/user/hand/right/input/menu/click"),
-          { { "/input/system/click", "/input/application_menu/click", "/input/options/click" },
+          { { "/input/application_menu/click", "/input/options/click" },
             ButtonType::Binary } }
     );
     RIGHT_CONTROLLER_BUTTON_MAPPING.insert(

@@ -724,7 +724,7 @@ fn daydream_input(id: &str, val: Option<&Value>, out: &mut Vec<ButtonEntry>) -> 
         return false;
     };
     match input {
-        // Protocol Y grows downwards.
+        // Protocol Y grows upwards, like the Vive trackpad.
         "/in/tp/val" => {
             if let Some([x, y]) = val.and_then(json_f32s::<2>) {
                 out.push(ButtonEntry {
@@ -733,7 +733,7 @@ fn daydream_input(id: &str, val: Option<&Value>, out: &mut Vec<ButtonEntry>) -> 
                 });
                 out.push(ButtonEntry {
                     path_id: *RIGHT_TRACKPAD_Y_ID,
-                    value: ButtonValue::Scalar((-y).clamp(-1.0, 1.0)),
+                    value: ButtonValue::Scalar(y.clamp(-1.0, 1.0)),
                 });
             }
         }
