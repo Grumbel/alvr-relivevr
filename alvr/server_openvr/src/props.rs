@@ -546,7 +546,10 @@ pub extern "C" fn set_device_openvr_props(instance_ptr: *mut c_void, device_id: 
                         set_prop(RegisteredDeviceTypeString, "htc/vive_controller_Right");
                     }
                     set_prop(ControllerTypeString, "vive_controller");
-                    set_prop(InputProfilePathString, "{oculus}/input/touch_profile.json");
+                    // The wand's own profile: with the Touch profile SteamVR
+                    // checks vive_controller bindings (trackpad, menu, pointer
+                    // poses) against Touch inputs and drops them.
+                    set_prop(InputProfilePathString, "{htc}/input/vive_controller_profile.json");
                     set_icons("{htc}/icons/controller");
                 }
                 ControllersEmulationMode::ViveTracker => {
