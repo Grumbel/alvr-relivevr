@@ -2,8 +2,8 @@
 //! protocol. Talks to the official `com.amd.wirelessgvr` headset app (Lenovo
 //! Mirage Solo / Daydream) over UDP 1235.
 //!
-//! Protocol notes and evidence: relivevr-linux `trunk/docs/` (protocol.md,
-//! re-notes.md, windows-pcap.md, client-apk.md).
+//! Protocol notes and evidence: <https://github.com/Grumbel/relivevr-linux>
+//! `docs/` (protocol.md, re-notes.md, windows-pcap.md, client-apk.md).
 //!
 //! Wire format: 15-byte FlowCtrl fragment header (BE: u16 seq, u32 total len,
 //! u32 offset, u32 fragment len, u8 channel), then a type byte + JSON for
