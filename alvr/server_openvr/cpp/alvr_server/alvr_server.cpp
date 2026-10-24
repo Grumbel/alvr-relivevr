@@ -21,17 +21,6 @@
 #include <optional>
 
 #ifdef __linux__
-#include "include/openvr_math.h"
-std::unique_ptr<vr::HmdMatrix34_t> GetInvZeroPose();
-
-std::unique_ptr<vr::HmdMatrix34_t> GetRawZeroPose() {
-    auto invZeroPose = GetInvZeroPose();
-    if (invZeroPose == nullptr) {
-        return nullptr;
-    }
-    return std::make_unique<vr::HmdMatrix34_t>(vrmath::matInv33(*invZeroPose));
-}
-
 bool IsOpenvrClientReady();
 #endif
 void _SetChaperoneArea(float areaWidth, float areaHeight);
@@ -142,24 +131,6 @@ public:
                 HapticsSend(id, haptics.fDurationSeconds, haptics.fFrequency, haptics.fAmplitude);
             }
 
-// remove?
-#ifdef __linux__
-            else if (event.eventType == vr::VREvent_ChaperoneUniverseHasChanged
-                     || event.eventType == vr::VREvent_ChaperoneRoomSetupCommitted
-                     || event.eventType == vr::VREvent_ChaperoneFlushCache
-                     || event.eventType == vr::VREvent_ChaperoneSettingsHaveChanged
-                     || event.eventType == vr::VREvent_SeatedZeroPoseReset
-                     || event.eventType == vr::VREvent_StandingZeroPoseReset
-                     || event.eventType == vr::VREvent_SceneApplicationChanged
-                     || event.eventType == VendorEvent_ALVRDriverResync) {
-                if (hmd && hmd->m_poseHistory) {
-                    auto rawZeroPose = GetRawZeroPose();
-                    if (rawZeroPose != nullptr) {
-                        hmd->m_poseHistory->SetTransform(*rawZeroPose);
-                    }
-                }
-            }
-#endif
         }
         if (vr::VRServerDriverHost()->IsExiting() && !shutdown_called) {
             Debug("DriverProvider: Received shutdown event");

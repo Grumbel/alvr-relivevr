@@ -99,26 +99,3 @@ void _SetChaperoneArea(float areaWidth, float areaHeight) {
 #endif
 }
 
-#ifdef __linux__
-std::unique_ptr<vr::HmdMatrix34_t> GetInvZeroPose() {
-    Debug("GetInvZeroPose");
-
-    std::unique_lock<std::mutex> lock(chaperone_mutex);
-    if (!isOpenvrInit) {
-        return nullptr;
-    }
-    auto mat = std::make_unique<vr::HmdMatrix34_t>();
-    // revert pulls live into working copy
-    vr::VRChaperoneSetup()->RevertWorkingCopy();
-    auto compositor = vr::VRCompositor();
-    if (compositor == nullptr) {
-        return nullptr;
-    }
-    if (compositor->GetTrackingSpace() == vr::TrackingUniverseStanding) {
-        vr::VRChaperoneSetup()->GetWorkingStandingZeroPoseToRawTrackingPose(mat.get());
-    } else {
-        vr::VRChaperoneSetup()->GetWorkingSeatedZeroPoseToRawTrackingPose(mat.get());
-    }
-    return mat;
-}
-#endif

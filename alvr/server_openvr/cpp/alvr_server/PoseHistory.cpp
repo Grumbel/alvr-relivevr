@@ -10,11 +10,9 @@
 // A submitted frame was rendered from a recent pose, so matches older than this
 // are stale no matter how well the rotation agrees.
 static constexpr uint64_t MATCH_WINDOW_NS = 250000000;
-// The head counts as still when all poses of this span agree within
-// STILL_DISTANCE (squared matrix distance, about 0.2 degrees).
-static constexpr uint64_t STILL_SPAN_NS = 100000000;
-static constexpr float STILL_DISTANCE = 1e-5f;
-static constexpr float CORRECTION_RATE = 0.2f;
+// A pose the app rendered with matches its history entry almost exactly
+// (float noise only). Anything worse means the transform is off.
+static constexpr float GOOD_MATCH_DISTANCE = 1e-6f;
 
 static float RotationDistance(const vr::HmdMatrix34_t& a, const vr::HmdMatrix34_t& b) {
     float distance = 0;
@@ -26,22 +24,9 @@ static float RotationDistance(const vr::HmdMatrix34_t& a, const vr::HmdMatrix34_
     return distance;
 }
 
-// Gram-Schmidt on the rows, to keep a blended matrix a rotation.
-static void Orthonormalize(float m[3][3]) {
-    auto dot = [](const float* a, const float* b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; };
-    auto normalize = [&](float* a) {
-        float len = sqrtf(dot(a, a));
-        for (int i = 0; i < 3; i++)
-            a[i] /= len;
-    };
-    normalize(m[0]);
-    float d = dot(m[1], m[0]);
-    for (int i = 0; i < 3; i++)
-        m[1][i] -= d * m[0][i];
-    normalize(m[1]);
-    m[2][0] = m[0][1] * m[1][2] - m[0][2] * m[1][1];
-    m[2][1] = m[0][2] * m[1][0] - m[0][0] * m[1][2];
-    m[2][2] = m[0][0] * m[1][1] - m[0][1] * m[1][0];
+// Rotation angle in degrees for a squared matrix distance (|A-B|^2 = 4(1-cos)).
+static float DistanceToDegrees(float distance) {
+    return acosf(std::clamp(1.0f - distance / 4.0f, -1.0f, 1.0f)) * 180 / M_PI;
 }
 
 void PoseHistory::OnPoseUpdated(uint64_t targetTimestampNs, FfiDeviceMotion motion) {
@@ -58,11 +43,10 @@ void PoseHistory::OnPoseUpdated(uint64_t targetTimestampNs, FfiDeviceMotion moti
         &history.rotationMatrix
     );
 
+    // Kept in raw tracking space: vrcompositor submits its layers with raw
+    // poses, also after a SteamVR recenter changes the zero pose (applying
+    // the zero pose here made every match after a recenter wrong).
     std::unique_lock<std::mutex> lock(m_mutex);
-    if (!m_transformIdentity) {
-        vr::HmdMatrix34_t rotation = vrmath::matMul33(m_transform, history.rotationMatrix);
-        history.rotationMatrix = rotation;
-    }
 
     if (m_poseBuffer.size() == 0) {
         m_poseBuffer.push_back(history);
@@ -91,39 +75,6 @@ PoseHistory::GetBestPoseMatch(const vr::HmdMatrix34_t& pose) const {
     // equally well. Search newest first so a tie resolves to the most recent
     // entry, and stop at the window bound.
     const uint64_t newestTimestampNs = m_poseBuffer.back().targetTimestampNs;
-    const auto& newest = m_poseBuffer.back().rotationMatrix;
-
-    // Learn the correction while the head is still: then the app rendered with
-    // (a prediction of) the newest pose, so pose = C * newest.
-    bool still = true;
-    for (auto it = m_poseBuffer.rbegin(); it != m_poseBuffer.rend(); ++it) {
-        if (newestTimestampNs - it->targetTimestampNs > STILL_SPAN_NS)
-            break;
-        if (RotationDistance(it->rotationMatrix, newest) > STILL_DISTANCE) {
-            still = false;
-            break;
-        }
-    }
-    if (still) {
-        for (int i = 0; i < 3; i++) {
-            for (int j = 0; j < 3; j++) {
-                float measured = 0; // (pose * newest^T)[i][j]
-                for (int k = 0; k < 3; k++)
-                    measured += pose.m[i][k] * newest.m[j][k];
-                m_correction[i][j] += CORRECTION_RATE * (measured - m_correction[i][j]);
-            }
-        }
-        Orthonormalize(m_correction);
-    }
-
-    // Match C^T * pose against the history.
-    vr::HmdMatrix34_t corrected = {};
-    for (int i = 0; i < 3; i++) {
-        for (int j = 0; j < 3; j++) {
-            for (int k = 0; k < 3; k++)
-                corrected.m[i][j] += m_correction[k][i] * pose.m[k][j];
-        }
-    }
 
     float minDiff = 100000;
     auto minIt = m_poseBuffer.rbegin();
@@ -136,7 +87,7 @@ PoseHistory::GetBestPoseMatch(const vr::HmdMatrix34_t& pose) const {
         // Rotation matrix composes a part of ViewMatrix of TrackingInfo.
         // The bottom and right side of the matrix are not compared, because
         // pPose does not contain that part of matrix.
-        float distance = RotationDistance(it->rotationMatrix, corrected);
+        float distance = RotationDistance(it->rotationMatrix, pose);
         if (minDiff > distance) {
             secondDiff = minDiff;
             minIt = it;
@@ -146,19 +97,28 @@ PoseHistory::GetBestPoseMatch(const vr::HmdMatrix34_t& pose) const {
             secondDiff = distance;
         }
     }
-    static uint64_t calls = 0;
-    if (++calls % 75 == 0) {
+    static uint64_t calls = 0, bad = 0;
+    ++calls;
+    if (minDiff > GOOD_MATCH_DISTANCE) {
+        // The frame gets the wrong pose: the warp starts from it and the
+        // client reprojects from it, so the image jitters.
+        if (bad++ % 75 == 0) {
+            Warn(
+                "PoseHistory: no exact pose match (%llu so far): best %.2f deg off, %.1f ms "
+                "old",
+                (unsigned long long)bad,
+                DistanceToDegrees(minDiff),
+                (newestTimestampNs - minIt->targetTimestampNs) / 1e6
+            );
+        }
+    } else if (calls % 750 == 0) {
         Info(
-            "PoseHistory: match %zu back, diff %.3g (next best %.3g), age %.1f ms, "
-            "correction %.2f deg%s",
+            "PoseHistory: match %zu back, diff %.3g (next best %.3g), age %.1f ms, %llu inexact",
             minIndex,
             minDiff,
             secondDiff,
             (newestTimestampNs - minIt->targetTimestampNs) / 1e6,
-            acosf(std::clamp(
-                (m_correction[0][0] + m_correction[1][1] + m_correction[2][2] - 1) / 2, -1.0f, 1.0f
-            )) * 180 / M_PI,
-            still ? " (still)" : ""
+            (unsigned long long)bad
         );
     }
     return *minIt;
@@ -182,19 +142,4 @@ std::optional<PoseHistory::TrackingHistoryFrame> PoseHistory::GetLatestPose() co
         return {};
     }
     return m_poseBuffer.back();
-}
-
-void PoseHistory::SetTransform(const vr::HmdMatrix34_t& transform) {
-    std::unique_lock<std::mutex> lock(m_mutex);
-    m_transform = transform;
-
-    for (int i = 0; i < 3; ++i) {
-        for (int j = 0; j < 3; ++j) {
-            if (transform.m[i][j] != (i == j ? 1 : 0)) {
-                m_transformIdentity = false;
-                return;
-            }
-        }
-    }
-    m_transformIdentity = true;
 }

@@ -2,6 +2,10 @@
 
 ## Verify on the headset
 
+- Pose match in real games, at low fps and after SteamVR recenters (fixed
+  2026-10-24, checked only in the SteamVR environment so far). The log should
+  show `PoseHistory: match … 0 inexact`. Any `no exact pose match` warning
+  means frames carry the wrong pose (jitter).
 - Laser pointer and controller highlight in the SteamVR status window after
   switching the Vive wand to its own input profile (`a88661a`). Before that,
   SteamVR dropped the dashboard bindings
@@ -12,18 +16,6 @@
 
 ## Open
 
-- Jitter after a SteamVR recenter. Each `Update ZeroPose for the chaperone
-  universe` in vrserver.txt changes the transform on the app poses, and the
-  PoseHistory match goes from exact (diff ~1e-10) to 6°–50° off, picking
-  samples up to 250 ms old. The warp then starts from the wrong pose, and the
-  frame is stamped with it. `SetTransform` (chaperone working copy, on events)
-  doesn't catch it, and `m_correction` converges slowly to a wrong value (8.55°
-  for a ~6° offset). relivevr-linux showed that a stamp/image mismatch is
-  exactly what makes the jitter, and that low fps alone doesn't (see its
-  docs/re-notes.md 2026-10-24). Fix idea: track the live zero pose
-  (`IVRSystem::GetRawZeroPoseToStandingAbsoluteTrackingPose`), store raw
-  orientations and apply the transform at match time, drop `m_correction`.
-  Warn when the best match isn't near exact.
 - SteamVR Home stutters (looks like missed frames); the plain SteamVR
   environment is smooth. Home is disabled for now (`enableHomeApp: false`).
 - SteamVR shows "SteamVR Fail (-203)" at startup and the desktop VR View
