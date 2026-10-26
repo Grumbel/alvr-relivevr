@@ -6,15 +6,19 @@
     # host glibc, so a driver built against a newer glibc fails to load
     # ("GLIBC_2.43 not found"). Update together with the system.
     nixpkgs.url = "github:NixOS/nixpkgs/7993f34ee47e28a3d607a525aadc6c94b73be728";
+    # Builds the workspace's dependencies in a separate derivation, so a
+    # source change only recompiles ALVR's own crates.
+    crane.url = "github:ipetkov/crane";
     # openvr is a git submodule
     self.submodules = true;
   };
 
-  outputs = { self, nixpkgs }:
+  outputs = { self, nixpkgs, crane }:
     let
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
       lib = pkgs.lib;
+      craneLib = crane.mkLib pkgs;
 
       # ALVR master builds against FFmpeg 8.1 with its own VAAPI patches
       # (alvr/xtask/patches); nixpkgs' ffmpeg-alvr is 6.0 for ALVR 20.14.1.
@@ -38,27 +42,76 @@
         ALVR_VULKAN_HEADERS_DIR = "${pkgs.vulkan-headers}/include";
       };
 
-      # Build recipe (deps, postInstall) from nixpkgs' alvr package; source,
-      # FFmpeg and vendored crates are ours.
-      alvr = (pkgs.alvr.override { inherit ffmpeg-alvr; }).overrideAttrs (old: {
+      # Build inputs and flags follow nixpkgs' alvr package (20.14.1).
+      commonArgs = {
+        pname = "alvr";
         version = "master-relivevr";
         src = self;
-        patches = [ ];
-        env = old.env // libEnv;
+        strictDeps = true;
+        doCheck = false;
+
+        nativeBuildInputs = with pkgs; [
+          rust-cbindgen
+          pkg-config
+          rustPlatform.bindgenHook
+          autoAddDriverRunpath
+        ];
+
+        buildInputs = with pkgs; [
+          alsa-lib android-tools brotli bzip2 celt ffmpeg-alvr gmp jack2 lame
+          libx11 libxcursor libxi libxrandr libdrm libglvnd libogg libpng
+          libtheora libunwind libva libvdpau libxkbcommon openapv openssl
+          openvr pipewire soxr vulkan-headers vulkan-loader wayland x264
+          xvidcore
+        ];
+
+        # Must be identical for the dependency and the final build, or cargo
+        # rebuilds every dependency.
+        env = libEnv // {
+          inherit (pkgs.alvr.drvAttrs) NIX_CFLAGS_COMPILE RUSTFLAGS;
+        };
+
+        # bindgenHook copies stdenv's -frandom-seed=<output hash> into
+        # BINDGEN_EXTRA_CLANG_ARGS. Bindgen build scripts rerun when it
+        # changes, so drop it: it differs between the two derivations.
+        preBuild = ''
+          BINDGEN_EXTRA_CLANG_ARGS=$(sed 's/-frandom-seed=[^ ]*//' <<< "$BINDGEN_EXTRA_CLANG_ARGS")
+          export BINDGEN_EXTRA_CLANG_ARGS
+        '';
+      };
+
+      # Dependencies only; rebuilt when Cargo.toml/Cargo.lock change. Builds
+      # what `alvr_xtask build-streamer --release` builds, one package at a
+      # time like xtask (features resolve per package), so the final build
+      # finds every dependency already compiled.
+      cargoArtifacts = craneLib.buildDepsOnly (commonArgs // {
+        src = craneLib.cleanCargoSource self;
+        buildPhaseCargoCommand = ''
+          cargo build --locked -p alvr_xtask
+          cargo build --locked --release -p alvr_server_openvr
+          cargo build --locked --release -p alvr_dashboard
+        '';
+      });
+
+      alvr = craneLib.buildPackage (commonArgs // {
+        inherit cargoArtifacts;
+        # The xtask binary directly instead of `cargo xtask`: `cargo run` sets
+        # CARGO_MANIFEST_DIR, which makes ring's build script rerun.
+        buildPhaseCargoCommand = ''
+          cargo build --locked -p alvr_xtask
+          ./target/debug/alvr_xtask build-streamer --release
+        '';
+        doNotPostBuildInstallCargoBinaries = true;
         # ALVR master's streamer tree is bin/ + lib64/alvr (driver) + libexec/,
         # without the share/ of 20.14.1. The dashboard finds the driver at
         # ../lib64/alvr relative to itself.
-        postInstall = ''
-          cp -rf ./build/alvr_streamer_linux/. $out/
+        installPhaseCommand = ''
+          mkdir -p $out
+          cp -r ./build/alvr_streamer_linux/. $out/
           install -Dm644 alvr/xtask/resources/alvr.desktop $out/share/applications/alvr.desktop
           install -Dm644 resources/ALVR-Icon.svg $out/share/icons/hicolor/scalable/apps/alvr.svg
         '';
-        cargoDeps = pkgs.rustPlatform.importCargoLock {
-          lockFile = ./Cargo.lock;
-          outputHashes = {
-            "settings-schema-0.2.0" = "sha256-luEdAKDTq76dMeo5kA+QDTHpRMFUg3n0qvyQ7DkId0k=";
-          };
-        };
+        meta.mainProgram = "alvr_dashboard";
       });
 
       app = name: description: runtimeInputs: text: {
@@ -137,13 +190,14 @@
 
       packages.${system} = {
         default = alvr;
+        alvr-deps = cargoArtifacts;
         inherit ffmpeg-alvr;
       };
 
-      devShells.${system}.default = pkgs.mkShell ({
+      devShells.${system}.default = craneLib.devShell {
         inputsFrom = [ alvr ];
-        nativeBuildInputs = [ pkgs.rustfmt pkgs.clippy ];
-        inherit (pkgs.alvr.drvAttrs) NIX_CFLAGS_COMPILE RUSTFLAGS;
-      } // libEnv);
+        packages = [ pkgs.rust-analyzer ];
+        inherit (commonArgs) env;
+      };
     };
 }

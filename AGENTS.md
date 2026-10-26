@@ -44,7 +44,11 @@ there too.
   profile.
 - `alvr/server_openvr/build.rs`: `ALVR_FFMPEG_DIR`, `ALVR_X264_DIR`,
   `ALVR_VULKAN_HEADERS_DIR` (Nix instead of `cargo xtask prepare-deps`).
-- `flake.nix`: package, apps, dev shell. nixpkgs is pinned to the
+- `flake.nix`: package, apps, dev shell. Built with crane: the
+  dependencies are a separate derivation (`.#alvr-deps`) that only rebuilds
+  when `Cargo.toml`/`Cargo.lock` change. If `nix build` starts recompiling
+  third-party crates again, the two derivations' environments differ (see
+  the comments in `commonArgs`). nixpkgs is pinned to the
   developer's NixOS revision **on purpose**: SteamVR loads the driver with
   the host glibc.
 
